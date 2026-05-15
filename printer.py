@@ -1,7 +1,7 @@
 """ESC/POS printer abstraction for the EPSON TM-m30 over USB."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from types import TracebackType
 
@@ -14,8 +14,19 @@ _ESC_INIT = b"\x1b\x40"
 DEFAULT_PRINT_WIDTH_DOTS = 544
 
 
+class Justification(IntEnum):
+    LEFT = 0
+    CENTER = 1
+    RIGHT = 2
+
+
 @dataclass
 class Printable(ABC):
+    justification: Justification = field(default=Justification.LEFT, kw_only=True)
+
+    def _justification_bytes(self) -> bytes:
+        return b"\x1b\x61" + bytes([self.justification])
+
     @abstractmethod
     def to_bytes(self) -> bytes: ...
 
@@ -25,7 +36,7 @@ class Text(Printable):
     content: str
 
     def to_bytes(self) -> bytes:
-        return self.content.encode("cp437", errors="replace")
+        return self._justification_bytes() + self.content.encode("cp437", errors="replace")
 
 
 @dataclass
@@ -36,27 +47,19 @@ class CutAndPrint(Printable):
         return b"\x1d\x56\x41" + bytes([self.feed_dots])
 
 
-class Justification(IntEnum):
-    LEFT = 0
-    CENTER = 1
-    RIGHT = 2
-
-
 @dataclass
 class Image(Printable):
     """An image file printed at `width_dots` (filled to that width)."""
 
     path: str
     width_dots: int = DEFAULT_PRINT_WIDTH_DOTS
-    justification: Justification = Justification.CENTER
     chunk_height: int = 128
 
     def to_bytes(self) -> bytes:
         raster = load_dithered(self.path, self.width_dots)
         width_bytes = self.width_dots // 8
         total_height = len(raster) // width_bytes
-        out = bytearray()
-        out += b"\x1b\x61" + bytes([self.justification])
+        out = bytearray(self._justification_bytes())
         for y0 in range(0, total_height, self.chunk_height):
             h = min(self.chunk_height, total_height - y0)
             header = b"\x1d\x76\x30\x00" + bytes(
@@ -70,7 +73,6 @@ class Image(Printable):
             start = y0 * width_bytes
             end = start + h * width_bytes
             out += header + raster[start:end]
-        out += b"\x1b\x61\x00"
         return bytes(out)
 
 

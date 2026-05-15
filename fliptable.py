@@ -10,7 +10,7 @@ from datetime import datetime
 import psycopg
 from psycopg.rows import class_row
 
-from printer import CutAndPrint, Printable, Printer, Text, Image
+from printer import CutAndPrint, Printable, Printer, Text, Image, Justification
 
 CARD_WIDTH = 48
 STAT_MAX = 10
@@ -50,15 +50,18 @@ def _card(row: DbRow) -> list[Printable]:
         f"write speed  {_bar(row.write_speed)}",
         "",
     ]
-    if row.logged_at is not None:
-        body.append(f"logged: {row.logged_at:%Y-%m-%d %I:%M:%S %p}")
-    body.extend(["", "", ""])
+    body.extend(["", ""])
     return [
         Text("FLIP TABLE;\n"),
         Image("/Users/marcos/m/art/fliptable/flip.png"),
         Text("\n".join(body)),
-        Image("/Users/marcos/m/projects/fliptable/qr-code.png", width_dots=128),
-        Text("\n"),
+        Image(
+            "/Users/marcos/m/projects/fliptable/qr-code.png",
+            width_dots=128,
+            justification=Justification.CENTER,
+        ),
+        Text("https://fliptable.nyc", justification=Justification.CENTER),
+        Text("\n\n"),
         CutAndPrint(),
     ]
 
