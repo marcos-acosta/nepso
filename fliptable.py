@@ -58,6 +58,7 @@ def _card(row: DbRow) -> list[Printable]:
         Image("/Users/marcos/m/art/fliptable/flip.png"),
         Text("\n".join(body)),
         Image("/Users/marcos/m/projects/fliptable/qr-code.png", width_dots=128),
+        Text("\n"),
         CutAndPrint(),
     ]
 

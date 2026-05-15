@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import IntEnum
 from types import TracebackType
 
 import usb.core
@@ -35,12 +36,19 @@ class CutAndPrint(Printable):
         return b"\x1d\x56\x41" + bytes([self.feed_dots])
 
 
+class Justification(IntEnum):
+    LEFT = 0
+    CENTER = 1
+    RIGHT = 2
+
+
 @dataclass
 class Image(Printable):
     """An image file printed at `width_dots` (filled to that width)."""
 
     path: str
     width_dots: int = DEFAULT_PRINT_WIDTH_DOTS
+    justification: Justification = Justification.CENTER
     chunk_height: int = 128
 
     def to_bytes(self) -> bytes:
@@ -48,6 +56,7 @@ class Image(Printable):
         width_bytes = self.width_dots // 8
         total_height = len(raster) // width_bytes
         out = bytearray()
+        out += b"\x1b\x61" + bytes([self.justification])
         for y0 in range(0, total_height, self.chunk_height):
             h = min(self.chunk_height, total_height - y0)
             header = b"\x1d\x76\x30\x00" + bytes(
@@ -61,6 +70,7 @@ class Image(Printable):
             start = y0 * width_bytes
             end = start + h * width_bytes
             out += header + raster[start:end]
+        out += b"\x1b\x61\x00"
         return bytes(out)
 
 
