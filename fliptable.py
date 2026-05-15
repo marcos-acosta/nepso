@@ -10,7 +10,7 @@ from datetime import datetime
 import psycopg
 from psycopg.rows import class_row
 
-from printer import CutAndPrint, Printable, Printer, Text
+from printer import CutAndPrint, Printable, Printer, Text, Image
 
 CARD_WIDTH = 48
 STAT_MAX = 10
@@ -39,8 +39,7 @@ def _card(row: DbRow) -> list[Printable]:
     rule = "─" * CARD_WIDTH
     body = [
         rule,
-        row.name,
-        f"({row.db_name})",
+        f"{row.db_name} - {row.name}",
         rule,
         row.short_description,
         "",
@@ -54,7 +53,13 @@ def _card(row: DbRow) -> list[Printable]:
     if row.logged_at is not None:
         body.append(f"logged: {row.logged_at:%Y-%m-%d %I:%M:%S %p}")
     body.extend(["", "", ""])
-    return [Text("\n".join(body) + "\n"), CutAndPrint()]
+    return [
+        Text("FLIP TABLE;\n"),
+        Image("/Users/marcos/m/art/fliptable/flip.png"),
+        Text("\n".join(body)),
+        Image("/Users/marcos/m/projects/fliptable/qr-code.png", width_dots=128),
+        CutAndPrint(),
+    ]
 
 
 def fetch_rows() -> list[DbRow]:

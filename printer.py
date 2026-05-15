@@ -7,7 +7,10 @@ from types import TracebackType
 import usb.core
 import usb.util
 
+from image_loader import load_dithered
+
 _ESC_INIT = b"\x1b\x40"
+DEFAULT_PRINT_WIDTH_DOTS = 544
 
 
 @dataclass
@@ -30,6 +33,35 @@ class CutAndPrint(Printable):
 
     def to_bytes(self) -> bytes:
         return b"\x1d\x56\x41" + bytes([self.feed_dots])
+
+
+@dataclass
+class Image(Printable):
+    """An image file printed at `width_dots` (filled to that width)."""
+
+    path: str
+    width_dots: int = DEFAULT_PRINT_WIDTH_DOTS
+    chunk_height: int = 128
+
+    def to_bytes(self) -> bytes:
+        raster = load_dithered(self.path, self.width_dots)
+        width_bytes = self.width_dots // 8
+        total_height = len(raster) // width_bytes
+        out = bytearray()
+        for y0 in range(0, total_height, self.chunk_height):
+            h = min(self.chunk_height, total_height - y0)
+            header = b"\x1d\x76\x30\x00" + bytes(
+                [
+                    width_bytes & 0xFF,
+                    (width_bytes >> 8) & 0xFF,
+                    h & 0xFF,
+                    (h >> 8) & 0xFF,
+                ]
+            )
+            start = y0 * width_bytes
+            end = start + h * width_bytes
+            out += header + raster[start:end]
+        return bytes(out)
 
 
 class Printer:
