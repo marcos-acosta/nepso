@@ -48,8 +48,9 @@ def _card(row: DbRow) -> list[Printable]:
         f"consistency  {_bar(row.consistency)}",
         f"read speed   {_bar(row.read_speed)}",
         f"write speed  {_bar(row.write_speed)}",
-        "",
     ]
+    if row.will_present:
+        body.extend(["", "* presented"])
     body.extend(["", ""])
     return [
         Text("FLIP TABLE;\n"),
@@ -73,7 +74,7 @@ def fetch_rows() -> list[DbRow]:
             cur.execute(
                 "SELECT name, db_name, short_description, storage, "
                 "availability, consistency, read_speed, write_speed, "
-                "logged_at, will_present FROM dbs ORDER BY name"
+                "logged_at, will_present FROM dbs ORDER BY logged_at ASC"
             )
             return cur.fetchall()
 
@@ -85,6 +86,7 @@ def main() -> None:
         for row in rows:
             written = printer.execute(_card(row))
             print(f"  {row.name}: {written} bytes")
+            input("Press ENTER to continue")
 
 
 if __name__ == "__main__":
