@@ -17,12 +17,19 @@ from printer import CutAndPrint, Printable, Printer, Text, Image, Justification
 CARD_WIDTH = 48
 STAT_MAX = 10
 
-SELECT_SQL = (
+SELECT_BASE = (
     "SELECT id, name, db_name, short_description, storage, "
     "availability, consistency, read_speed, write_speed, "
-    "logged_at, will_present, alignment_x, alignment_y "
-    "FROM dbs ORDER BY logged_at ASC"
+    "logged_at, will_present, alignment_x, alignment_y FROM dbs"
 )
+SELECT_ALL_SQL = f"{SELECT_BASE} ORDER BY logged_at ASC"
+SELECT_PRESENTING_SQL = (
+    f"{SELECT_BASE} WHERE will_present = TRUE ORDER BY logged_at ASC"
+)
+SELECT_NONPRESENTING_SQL = (
+    f"{SELECT_BASE} WHERE will_present = FALSE ORDER BY logged_at ASC"
+)
+SELECT_BY_ID_SQL = f"{SELECT_BASE} WHERE id = %s"
 
 WINNER_QUADRANT_SQL = (
     "SELECT name, db_name, "
@@ -92,9 +99,8 @@ def _card(row: DbRow) -> list[Printable]:
         f"write speed  {_bar(row.write_speed)}",
     ]
     if row.will_present:
-        body.extend(["", "* presented"])
-    body.append("")
-    body.extend(_alignment_chart_lines(row))
+        body.extend(["", "* presented", ""])
+        body.extend(_alignment_chart_lines(row))
     body.extend(["", ""])
     return [
         Text("FLIP TABLE;\n"),
@@ -184,11 +190,17 @@ def _dsn() -> str:
     return os.environ.get("DATABASE_URL") or "postgresql:///postgres"
 
 
-def fetch_rows() -> list[DbRow]:
+def fetch_rows(sql: str = SELECT_ALL_SQL, params: tuple = ()) -> list[DbRow]:
     with psycopg.connect(_dsn()) as conn:
         with conn.cursor(row_factory=class_row(DbRow)) as cur:
-            cur.execute(SELECT_SQL)
+            cur.execute(sql, params)
             return cur.fetchall()
+
+
+def _print_copies(printer: Printer, row: DbRow, copies: int) -> None:
+    for i in range(copies):
+        written = printer.execute(_card(row))
+        print(f"  copy {i + 1}/{copies} ({row.name}): {written} bytes")
 
 
 def _parse_alignment(s: str) -> tuple[float, float] | None:
@@ -221,10 +233,10 @@ def run_winners() -> None:
         print(f"  {written} bytes")
 
 
-def run_detail(copies: int) -> None:
+def run_present(copies: int) -> None:
     with psycopg.connect(_dsn()) as conn:
         with conn.cursor(row_factory=class_row(DbRow)) as cur:
-            cur.execute(SELECT_SQL)
+            cur.execute(SELECT_PRESENTING_SQL)
             rows = cur.fetchall()
         by_id = {row.id: row for row in rows}
 
@@ -235,6 +247,8 @@ def run_detail(copies: int) -> None:
                     for r in rows
                 ]
                 db_id = questionary.select("Select a database:", choices=choices).ask()
+                if db_id is None:
+                    return
 
                 parsed: tuple[float, float] | None = None
                 while True:
@@ -264,22 +278,46 @@ def run_detail(copies: int) -> None:
                     row.alignment_x = x
                     row.alignment_y = y
 
-                for i in range(copies):
-                    written = printer.execute(_card(row))
-                    print(f"  copy {i + 1}/{copies} ({row.name}): {written} bytes")
+                _print_copies(printer, row, copies)
+
+
+def run_nonpresenters(copies: int) -> None:
+    rows = fetch_rows(SELECT_NONPRESENTING_SQL)
+    print(f"Printing {len(rows)} non-presenter(s), {copies} copies each...")
+    with Printer() as printer:
+        for row in rows:
+            _print_copies(printer, row, copies)
+
+
+def run_detail(db_id: str, copies: int) -> None:
+    rows = fetch_rows(SELECT_BY_ID_SQL, (db_id,))
+    if not rows:
+        print(f"No database found with id={db_id}")
+        return
+    with Printer() as printer:
+        _print_copies(printer, rows[0], copies)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "mode", choices=["list", "detail", "winners"], nargs="?", default="detail"
+        "mode",
+        choices=["list", "present", "nonpresenters", "detail", "winners"],
+        nargs="?",
+        default="present",
+    )
+    parser.add_argument(
+        "id",
+        nargs="?",
+        default=None,
+        help="(detail mode) the id of the database to print",
     )
     parser.add_argument(
         "-n",
         "--copies",
         type=int,
         default=1,
-        help="copies per card in detail mode",
+        help="copies per card",
     )
     args = parser.parse_args()
 
@@ -291,8 +329,14 @@ def main() -> None:
             print(f"  {written} bytes")
     elif args.mode == "winners":
         run_winners()
+    elif args.mode == "nonpresenters":
+        run_nonpresenters(copies=args.copies)
+    elif args.mode == "detail":
+        if args.id is None:
+            parser.error("detail mode requires an id")
+        run_detail(db_id=args.id, copies=args.copies)
     else:
-        run_detail(copies=args.copies)
+        run_present(copies=args.copies)
 
 
 if __name__ == "__main__":
