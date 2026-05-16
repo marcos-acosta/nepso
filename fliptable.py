@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import psycopg
+import questionary
 from psycopg.rows import class_row
 
 from printer import CutAndPrint, Printable, Printer, Text, Image, Justification
@@ -16,9 +17,16 @@ from printer import CutAndPrint, Printable, Printer, Text, Image, Justification
 CARD_WIDTH = 48
 STAT_MAX = 10
 
+SELECT_SQL = (
+    "SELECT id, name, db_name, short_description, storage, "
+    "availability, consistency, read_speed, write_speed, "
+    "logged_at, will_present FROM dbs ORDER BY logged_at ASC"
+)
+
 
 @dataclass
 class DbRow:
+    id: str
     name: str
     db_name: str
     short_description: str
@@ -78,45 +86,96 @@ def _list(rows: list[DbRow]) -> list[Printable]:
     rule = "─" * CARD_WIDTH
     lines = ["FLIP TABLE;", "database registry", "", rule]
     for row in rows:
-        lines.append(f"{row.name} :: {row.db_name}")
-        lines.append(row.short_description)
-        ts = _fmt_logged_at(row.logged_at)
         marker = "  * presenting" if row.will_present else ""
-        lines.append(f"{ts}{marker}")
+        lines.append(f"{row.name} :: {row.db_name}{marker}")
+        lines.append("")
+        lines.append(row.short_description)
+        lines.append("")
+        ts = _fmt_logged_at(row.logged_at)
+        lines.append(ts)
+        lines.append(row.id)
         lines.append(rule)
     lines.extend(["", ""])
     return [Text("\n".join(lines) + "\n"), CutAndPrint()]
 
 
+def _dsn() -> str:
+    return os.environ.get("DATABASE_URL") or "postgresql:///postgres"
+
+
 def fetch_rows() -> list[DbRow]:
-    dsn = os.environ.get("DATABASE_URL") or "postgresql:///postgres"
-    with psycopg.connect(dsn) as conn:
+    with psycopg.connect(_dsn()) as conn:
         with conn.cursor(row_factory=class_row(DbRow)) as cur:
-            cur.execute(
-                "SELECT name, db_name, short_description, storage, "
-                "availability, consistency, read_speed, write_speed, "
-                "logged_at, will_present FROM dbs ORDER BY logged_at ASC"
-            )
+            cur.execute(SELECT_SQL)
             return cur.fetchall()
+
+
+def _parse_alignment(s: str) -> tuple[float, float] | None:
+    try:
+        xs, ys = s.split(",", 1)
+        return float(xs.strip()), float(ys.strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+def run_detail(copies: int) -> None:
+    with psycopg.connect(_dsn()) as conn:
+        with conn.cursor(row_factory=class_row(DbRow)) as cur:
+            cur.execute(SELECT_SQL)
+            rows = cur.fetchall()
+        by_id = {row.id: row for row in rows}
+
+        with Printer() as printer:
+            while True:
+                choices = [
+                    questionary.Choice(title=f"{r.name} ({r.db_name})", value=r.id)
+                    for r in rows
+                ]
+                db_id = questionary.select("Select a database:", choices=choices).ask()
+
+                while True:
+                    raw = questionary.text("Alignment (e.g. '-0.43,0.2'):").ask()
+                    if raw is None:
+                        return
+                    parsed = _parse_alignment(raw)
+                    if parsed is not None:
+                        break
+                    print("  expected 'x,y' floats")
+                x, y = parsed
+
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE dbs SET alignment_x = %s, alignment_y = %s WHERE id = %s",
+                        (x, y, db_id),
+                    )
+                conn.commit()
+
+                row = by_id[db_id]
+                for i in range(copies):
+                    written = printer.execute(_card(row))
+                    print(f"  copy {i + 1}/{copies} ({row.name}): {written} bytes")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=["list", "detail"], nargs="?", default="detail")
+    parser.add_argument(
+        "-n",
+        "--copies",
+        type=int,
+        default=1,
+        help="copies per card in detail mode",
+    )
     args = parser.parse_args()
 
-    rows = fetch_rows()
-    with Printer() as printer:
-        if args.mode == "list":
-            print(f"Printing list of {len(rows)} database(s)...")
+    if args.mode == "list":
+        rows = fetch_rows()
+        print(f"Printing list of {len(rows)} database(s)...")
+        with Printer() as printer:
             written = printer.execute(_list(rows))
             print(f"  {written} bytes")
-        else:
-            print(f"Printing {len(rows)} card(s)...")
-            for row in rows:
-                written = printer.execute(_card(row))
-                print(f"  {row.name}: {written} bytes")
-                input("Press ENTER to continue")
+    else:
+        run_detail(copies=args.copies)
 
 
 if __name__ == "__main__":
