@@ -24,6 +24,26 @@ SELECT_SQL = (
     "FROM dbs ORDER BY logged_at ASC"
 )
 
+WINNER_QUADRANT_SQL = (
+    "SELECT name, db_name, "
+    "(POWER(ABS(alignment_x) - 1, 2) + POWER(ABS(alignment_y) - 1, 2)) AS score "
+    "FROM dbs WHERE {where} ORDER BY score DESC LIMIT 1"
+)
+
+WINNER_ORIGIN_SQL = (
+    "SELECT name, db_name, "
+    "(POWER(alignment_x, 2) + POWER(alignment_y, 2)) AS score "
+    "FROM dbs WHERE alignment_x IS NOT NULL AND alignment_y IS NOT NULL "
+    "ORDER BY score ASC LIMIT 1"
+)
+
+QUADRANTS: list[tuple[str, str]] = [
+    ("lawful good", "alignment_x >= 0 AND alignment_y >= 0"),
+    ("chaotic good", "alignment_x <= 0 AND alignment_y >= 0"),
+    ("chaotic evil", "alignment_x <= 0 AND alignment_y <= 0"),
+    ("lawful evil", "alignment_x >= 0 AND alignment_y <= 0"),
+]
+
 ALIGNMENT_BUCKETS_X = 20  # 0.1-wide buckets across [-1, 1]
 ALIGNMENT_BUCKETS_Y = 8  # 0.25-wide buckets (char cells are taller than wide)
 
@@ -149,6 +169,17 @@ def _alignment_chart_lines(row: DbRow) -> list[str]:
     return lines
 
 
+def _winners_printable(winners: list[tuple[str, str, str]]) -> list[Printable]:
+    rule = "─" * CARD_WIDTH
+    lines = ["FLIP TABLE;", "winners", "", rule]
+    for label, name, db_name in winners:
+        lines.append(label)
+        lines.append(f"{name} :: {db_name}")
+        lines.append(rule)
+    lines.extend(["", ""])
+    return [Text("\n".join(lines) + "\n"), CutAndPrint()]
+
+
 def _dsn() -> str:
     return os.environ.get("DATABASE_URL") or "postgresql:///postgres"
 
@@ -166,6 +197,28 @@ def _parse_alignment(s: str) -> tuple[float, float] | None:
         return float(xs.strip()), float(ys.strip())
     except (ValueError, AttributeError):
         return None
+
+
+def run_winners() -> None:
+    winners: list[tuple[str, str, str]] = []
+    with psycopg.connect(_dsn()) as conn:
+        with conn.cursor() as cur:
+            for label, where in QUADRANTS:
+                cur.execute(WINNER_QUADRANT_SQL.format(where=where))
+                row = cur.fetchone()
+                if row is not None:
+                    winners.append((label, row[0], row[1]))
+            cur.execute(WINNER_ORIGIN_SQL)
+            row = cur.fetchone()
+            if row is not None:
+                winners.append(("most balanced", row[0], row[1]))
+
+    for label, name, db_name in winners:
+        print(f"  {label}: {name} ({db_name})")
+
+    with Printer() as printer:
+        written = printer.execute(_winners_printable(winners))
+        print(f"  {written} bytes")
 
 
 def run_detail(copies: int) -> None:
@@ -218,7 +271,9 @@ def run_detail(copies: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["list", "detail"], nargs="?", default="detail")
+    parser.add_argument(
+        "mode", choices=["list", "detail", "winners"], nargs="?", default="detail"
+    )
     parser.add_argument(
         "-n",
         "--copies",
@@ -234,6 +289,8 @@ def main() -> None:
         with Printer() as printer:
             written = printer.execute(_list(rows))
             print(f"  {written} bytes")
+    elif args.mode == "winners":
+        run_winners()
     else:
         run_detail(copies=args.copies)
 
