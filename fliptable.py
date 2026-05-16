@@ -3,6 +3,7 @@
 Connection comes from $DATABASE_URL, or libpq defaults (PG* env vars) if unset.
 """
 
+import argparse
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -54,7 +55,7 @@ def _card(row: DbRow) -> list[Printable]:
     body.extend(["", ""])
     return [
         Text("FLIP TABLE;\n"),
-        Image("/Users/marcos/m/art/fliptable/flip.png"),
+        Image("/Users/marcos/m/projects/fliptable/branding/flip.png"),
         Text("\n".join(body)),
         Image(
             "/Users/marcos/m/projects/fliptable/qr-code.png",
@@ -65,6 +66,26 @@ def _card(row: DbRow) -> list[Printable]:
         Text("\n\n"),
         CutAndPrint(),
     ]
+
+
+def _fmt_logged_at(logged_at: datetime | None) -> str:
+    if logged_at is None:
+        return "—"
+    return f"{logged_at:%Y-%m-%d %I:%M:%S %p}"
+
+
+def _list(rows: list[DbRow]) -> list[Printable]:
+    rule = "─" * CARD_WIDTH
+    lines = ["FLIP TABLE;", "database registry", "", rule]
+    for row in rows:
+        lines.append(f"{row.name} :: {row.db_name}")
+        lines.append(row.short_description)
+        ts = _fmt_logged_at(row.logged_at)
+        marker = "  * presenting" if row.will_present else ""
+        lines.append(f"{ts}{marker}")
+        lines.append(rule)
+    lines.extend(["", ""])
+    return [Text("\n".join(lines) + "\n"), CutAndPrint()]
 
 
 def fetch_rows() -> list[DbRow]:
@@ -80,13 +101,22 @@ def fetch_rows() -> list[DbRow]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("mode", choices=["list", "detail"], nargs="?", default="detail")
+    args = parser.parse_args()
+
     rows = fetch_rows()
-    print(f"Printing {len(rows)} card(s)...")
     with Printer() as printer:
-        for row in rows:
-            written = printer.execute(_card(row))
-            print(f"  {row.name}: {written} bytes")
-            input("Press ENTER to continue")
+        if args.mode == "list":
+            print(f"Printing list of {len(rows)} database(s)...")
+            written = printer.execute(_list(rows))
+            print(f"  {written} bytes")
+        else:
+            print(f"Printing {len(rows)} card(s)...")
+            for row in rows:
+                written = printer.execute(_card(row))
+                print(f"  {row.name}: {written} bytes")
+                input("Press ENTER to continue")
 
 
 if __name__ == "__main__":
