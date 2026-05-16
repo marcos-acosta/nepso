@@ -20,8 +20,19 @@ STAT_MAX = 10
 SELECT_SQL = (
     "SELECT id, name, db_name, short_description, storage, "
     "availability, consistency, read_speed, write_speed, "
-    "logged_at, will_present FROM dbs ORDER BY logged_at ASC"
+    "logged_at, will_present, alignment_x, alignment_y "
+    "FROM dbs ORDER BY logged_at ASC"
 )
+
+ALIGNMENT_BUCKETS_X = 20  # 0.1-wide buckets across [-1, 1]
+ALIGNMENT_BUCKETS_Y = 8  # 0.25-wide buckets (char cells are taller than wide)
+
+ALIGNMENT_LABEL_LEFT = "chaotic"
+ALIGNMENT_LABEL_RIGHT = "lawful"
+ALIGNMENT_LABEL_TOP = "good"
+ALIGNMENT_LABEL_BOTTOM = "evil"
+
+ALIGNMENT_EXTRA_PADDING_LEFT = 3
 
 
 @dataclass
@@ -37,6 +48,8 @@ class DbRow:
     write_speed: int
     logged_at: datetime | None
     will_present: bool
+    alignment_x: float | None
+    alignment_y: float | None
 
 
 def _bar(value: int) -> str:
@@ -60,6 +73,8 @@ def _card(row: DbRow) -> list[Printable]:
     ]
     if row.will_present:
         body.extend(["", "* presented"])
+    body.append("")
+    body.extend(_alignment_chart_lines(row))
     body.extend(["", ""])
     return [
         Text("FLIP TABLE;\n"),
@@ -99,6 +114,41 @@ def _list(rows: list[DbRow]) -> list[Printable]:
     return [Text("\n".join(lines) + "\n"), CutAndPrint()]
 
 
+def _bucket_x(v: float) -> int:
+    return max(0, min(ALIGNMENT_BUCKETS_X - 1, round((v + 1.0) * 10)))
+
+
+def _bucket_y(v: float) -> int:
+    return max(0, min(ALIGNMENT_BUCKETS_Y - 1, round((v + 1.0) * 4)))
+
+
+def _alignment_chart_lines(row: DbRow) -> list[str]:
+    grid = [[" "] * ALIGNMENT_BUCKETS_X for _ in range(ALIGNMENT_BUCKETS_Y)]
+    if row.alignment_x is not None and row.alignment_y is not None:
+        col = _bucket_x(float(row.alignment_x))
+        # Y is inverted: y=+1 (good) goes to the top row (index 0).
+        r = ALIGNMENT_BUCKETS_Y - 1 - _bucket_y(float(row.alignment_y))
+        grid[r][col] = "*"
+
+    pad = " " * (ALIGNMENT_EXTRA_PADDING_LEFT + len(ALIGNMENT_LABEL_LEFT) + 1)
+    chart_w = ALIGNMENT_BUCKETS_X
+    midline = ALIGNMENT_BUCKETS_Y // 2
+
+    lines = [pad + " " + ALIGNMENT_LABEL_TOP.center(chart_w)]
+    lines.append(pad + "┌" + "─" * chart_w + "┐")
+    for r, row_chars in enumerate(grid):
+        left = (
+            (" " * ALIGNMENT_EXTRA_PADDING_LEFT) + f"{ALIGNMENT_LABEL_LEFT} "
+            if r == midline
+            else pad
+        )
+        right = f" {ALIGNMENT_LABEL_RIGHT}" if r == midline else ""
+        lines.append(f"{left}│{''.join(row_chars)}│{right}")
+    lines.append(pad + "└" + "─" * chart_w + "┘")
+    lines.append(pad + " " + ALIGNMENT_LABEL_BOTTOM.center(chart_w))
+    return lines
+
+
 def _dsn() -> str:
     return os.environ.get("DATABASE_URL") or "postgresql:///postgres"
 
@@ -133,24 +183,34 @@ def run_detail(copies: int) -> None:
                 ]
                 db_id = questionary.select("Select a database:", choices=choices).ask()
 
+                parsed: tuple[float, float] | None = None
                 while True:
-                    raw = questionary.text("Alignment (e.g. '-0.43,0.2'):").ask()
+                    raw = questionary.text(
+                        "Alignment (e.g. '-0.43,0.2', empty to keep current):"
+                    ).ask()
                     if raw is None:
                         return
-                    parsed = _parse_alignment(raw)
-                    if parsed is not None:
+                    if raw.strip() == "":
+                        break
+                    p = _parse_alignment(raw)
+                    if p is not None:
+                        parsed = p
                         break
                     print("  expected 'x,y' floats")
-                x, y = parsed
-
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE dbs SET alignment_x = %s, alignment_y = %s WHERE id = %s",
-                        (x, y, db_id),
-                    )
-                conn.commit()
 
                 row = by_id[db_id]
+                if parsed is not None:
+                    x, y = parsed
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE dbs SET alignment_x = %s, alignment_y = %s "
+                            "WHERE id = %s",
+                            (x, y, db_id),
+                        )
+                    conn.commit()
+                    row.alignment_x = x
+                    row.alignment_y = y
+
                 for i in range(copies):
                     written = printer.execute(_card(row))
                     print(f"  copy {i + 1}/{copies} ({row.name}): {written} bytes")
