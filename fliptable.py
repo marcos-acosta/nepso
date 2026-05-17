@@ -45,19 +45,19 @@ WINNER_ORIGIN_SQL = (
 )
 
 QUADRANTS: list[tuple[str, str]] = [
-    ("lawful good", "alignment_x >= 0 AND alignment_y >= 0"),
-    ("chaotic good", "alignment_x <= 0 AND alignment_y >= 0"),
-    ("chaotic evil", "alignment_x <= 0 AND alignment_y <= 0"),
-    ("lawful evil", "alignment_x >= 0 AND alignment_y <= 0"),
+    ("blessed data", "alignment_x >= 0 AND alignment_y >= 0"),
+    ("cursed data", "alignment_x <= 0 AND alignment_y >= 0"),
+    ("cursed based", "alignment_x <= 0 AND alignment_y <= 0"),
+    ("blessed based", "alignment_x >= 0 AND alignment_y <= 0"),
 ]
 
 ALIGNMENT_BUCKETS_X = 20  # 0.1-wide buckets across [-1, 1]
 ALIGNMENT_BUCKETS_Y = 8  # 0.25-wide buckets (char cells are taller than wide)
 
-ALIGNMENT_LABEL_LEFT = "chaotic"
-ALIGNMENT_LABEL_RIGHT = "lawful"
-ALIGNMENT_LABEL_TOP = "good"
-ALIGNMENT_LABEL_BOTTOM = "evil"
+ALIGNMENT_LABEL_LEFT = "cursed"
+ALIGNMENT_LABEL_RIGHT = "blessed"
+ALIGNMENT_LABEL_TOP = "data"
+ALIGNMENT_LABEL_BOTTOM = "based"
 
 ALIGNMENT_EXTRA_PADDING_LEFT = 3
 
