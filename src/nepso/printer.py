@@ -8,7 +8,7 @@ from types import TracebackType
 import usb.core
 import usb.util
 
-from image_loader import load_dithered
+from .image_loader import load_dithered
 
 _ESC_INIT = b"\x1b\x40"
 DEFAULT_PRINT_WIDTH_DOTS = 544
