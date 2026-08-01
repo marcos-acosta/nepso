@@ -9,6 +9,7 @@ from .printer import (
     Printer,
     Text,
 )
+from .transport import TcpTransport, Transport, UsbTransport
 
 __all__ = [
     "CutAndPrint",
@@ -16,6 +17,9 @@ __all__ = [
     "Justification",
     "Printable",
     "Printer",
+    "TcpTransport",
     "Text",
+    "Transport",
+    "UsbTransport",
     "load_dithered",
 ]
