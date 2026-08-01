@@ -1,5 +1,6 @@
 """ESC/POS printer abstraction for the EPSON TM-m30."""
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -28,6 +29,9 @@ class Printable(ABC):
 
     @abstractmethod
     def to_bytes(self) -> bytes: ...
+
+    def to_chunks(self) -> list[bytes]:
+        return [self.to_bytes()]
 
 
 @dataclass
@@ -59,10 +63,13 @@ class Image(Printable):
     chunk_height: int = 128
 
     def to_bytes(self) -> bytes:
+        return b"".join(self.to_chunks())
+
+    def to_chunks(self) -> list[bytes]:
         raster = load_dithered(str(self.path), self.width_dots)
         width_bytes = self.width_dots // 8
         total_height = len(raster) // width_bytes
-        out = bytearray(self._justification_bytes())
+        chunks: list[bytes] = []
         for y0 in range(0, total_height, self.chunk_height):
             h = min(self.chunk_height, total_height - y0)
             header = b"\x1d\x76\x30\x00" + bytes(
@@ -75,8 +82,9 @@ class Image(Printable):
             )
             start = y0 * width_bytes
             end = start + h * width_bytes
-            out += header + raster[start:end]
-        return bytes(out)
+            prefix = self._justification_bytes() if y0 == 0 else b""
+            chunks.append(prefix + header + raster[start:end])
+        return chunks
 
 
 class Printer:
@@ -84,9 +92,11 @@ class Printer:
         self,
         transport: Transport,
         write_timeout_ms: int = 5000,
+        throttle_ms: int = 0,
     ) -> None:
         self._transport = transport
         self.write_timeout_ms = write_timeout_ms
+        self.throttle_ms = throttle_ms
 
     def __enter__(self) -> "Printer":
         self.open()
@@ -107,5 +117,10 @@ class Printer:
         self._transport.close()
 
     def execute(self, items: list[Printable]) -> int:
-        payload = _ESC_INIT + b"".join(item.to_bytes() for item in items)
-        return self._transport.write(payload, timeout_ms=self.write_timeout_ms)
+        total = self._transport.write(_ESC_INIT, timeout_ms=self.write_timeout_ms)
+        for item in items:
+            for i, chunk in enumerate(item.to_chunks()):
+                if i > 0 and self.throttle_ms > 0:
+                    time.sleep(self.throttle_ms / 1000)
+                total += self._transport.write(chunk, timeout_ms=self.write_timeout_ms)
+        return total
