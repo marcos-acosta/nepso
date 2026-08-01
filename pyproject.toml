@@ -1,9 +1,9 @@
 [project]
 name = "nepso"
-version = "0.1.0"
+version = "0.1.1"
 description = "ESC/POS printing for the EPSON TM-m30 with image dithering"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.0",
     "pillow>=12.2.0",
