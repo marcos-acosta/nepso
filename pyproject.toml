@@ -1,6 +1,6 @@
 [project]
 name = "nepso"
-version = "0.1.1"
+version = "0.1.2"
 description = "ESC/POS printing for the EPSON TM-m30 with image dithering"
 readme = "README.md"
 requires-python = ">=3.11"
