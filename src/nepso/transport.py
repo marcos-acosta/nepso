@@ -80,9 +80,7 @@ class TcpTransport(Transport):
         self._sock: socket.socket | None = None
 
     def open(self) -> None:
-        self._sock = socket.create_connection(
-            (self.host, self.port), timeout=5
-        )
+        self._sock = socket.create_connection((self.host, self.port), timeout=5)
 
     def close(self) -> None:
         if self._sock is not None:

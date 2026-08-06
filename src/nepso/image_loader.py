@@ -36,11 +36,9 @@ def _compute_shadow_lift(
     blurred = img.filter(ImageFilter.BoxBlur(kernel_size))
     pixels = np.array(blurred)
     dark_ratio = np.mean(pixels < dark_threshold)
-    print(dark_ratio)
     if dark_ratio <= min_coverage:
         return 0
     scale = min(1.0, (dark_ratio - min_coverage) / (max_coverage - min_coverage))
-    print(scale, max_shadow_lift * scale)
     return round(max_shadow_lift * scale)
 
 
